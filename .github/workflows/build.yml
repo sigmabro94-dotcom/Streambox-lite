@@ -10,6 +10,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +27,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare Git and Build APK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install build tools
+        run: sdkmanager "build-tools;35.0.0"
+
+      - name: Build both APK variants
         run: |
           PROJECT=$(find extracted -name gradlew -type f | head -n 1)
           test -n "$PROJECT" || { echo "Gradle project missing"; exit 1; }
@@ -37,19 +44,33 @@ jobs:
           git config user.email "actions@github.com"
           git add -A
           git commit -m "Prepare StreamBox Lite build"
-          ./gradlew assembleDebug
+          ./gradlew assembleStableDebug assemblePrereleaseDebug
 
-      - name: Collect APK
+      - name: Collect APKs
         run: |
-          APK=$(find extracted -type f -name "*.apk" -path "*/build/outputs/apk/*" | head -n 1)
-          test -n "$APK" || { echo "APK not generated"; exit 1; }
+          set -e
           mkdir -p artifacts
-          cp "$APK" artifacts/StreamBoxLite.apk
+          STABLE=$(find extracted -type f -iname "*.apk" -path "*/stable/debug/*" | head -n 1)
+          PRE=$(find extracted -type f -iname "*.apk" -path "*/prerelease/debug/*" | head -n 1)
+          test -n "$STABLE" || { echo "Stable APK missing"; exit 1; }
+          test -n "$PRE" || { echo "Prerelease APK missing"; exit 1; }
+          cp "$STABLE" artifacts/StreamBoxLite-Stable.apk
+          cp "$PRE" artifacts/StreamBoxLite-Prerelease.apk
 
-      - name: Upload APK
+      - name: Check APK integrity and Android requirements
+        run: |
+          set -e
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          for APK in artifacts/*.apk; do
+            echo "===== $APK ====="
+            unzip -tq "$APK"
+            "$AAPT" dump badging "$APK" | grep -E "package:|sdkVersion:|targetSdkVersion:|native-code:" || true
+            sha256sum "$APK"
+          done
+
+      - name: Upload both APKs
         uses: actions/upload-artifact@v4
         with:
-          name: StreamBoxLite-APK
-          path: artifacts/StreamBoxLite.apk
+          name: StreamBoxLite-Verified-APKs
+          path: artifacts/*.apk
           if-no-files-found: error
-          
