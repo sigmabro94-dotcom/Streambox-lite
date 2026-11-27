@@ -1,3 +1,4 @@
+
 name: StreamBox Lite APK Build
 
 on:
@@ -16,10 +17,7 @@ jobs:
         run: |
           mkdir -p extracted
           ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-          if [ -z "$ZIP" ]; then
-            echo "Backup ZIP not found"
-            exit 1
-          fi
+          test -n "$ZIP" || { echo "ZIP not found"; exit 1; }
           unzip -q "$ZIP" -d extracted
 
       - name: Setup Java
@@ -28,20 +26,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Find project and build
+      - name: Prepare Git and Build APK
         run: |
           PROJECT=$(find extracted -name gradlew -type f | head -n 1)
-          if [ -z "$PROJECT" ]; then
-            echo "Gradle project not found in backup ZIP"
-            exit 1
-          fi
+          test -n "$PROJECT" || { echo "Gradle project missing"; exit 1; }
           cd "$(dirname "$PROJECT")"
           chmod +x gradlew
+          git init -b main
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "Prepare StreamBox Lite build"
           ./gradlew assembleDebug
+
+      - name: Collect APK
+        run: |
+          APK=$(find extracted -type f -name "*.apk" -path "*/build/outputs/apk/*" | head -n 1)
+          test -n "$APK" || { echo "APK not generated"; exit 1; }
+          mkdir -p artifacts
+          cp "$APK" artifacts/StreamBoxLite.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: StreamBoxLite-APK
-          path: extracted/**/build/outputs/apk/**/*.apk
+          path: artifacts/StreamBoxLite.apk
           if-no-files-found: error
+          
