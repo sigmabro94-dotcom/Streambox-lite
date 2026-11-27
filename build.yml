@@ -1,0 +1,47 @@
+name: StreamBox Lite APK Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract project ZIP
+        run: |
+          mkdir -p extracted
+          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "Backup ZIP not found"
+            exit 1
+          fi
+          unzip -q "$ZIP" -d extracted
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Find project and build
+        run: |
+          PROJECT=$(find extracted -name gradlew -type f | head -n 1)
+          if [ -z "$PROJECT" ]; then
+            echo "Gradle project not found in backup ZIP"
+            exit 1
+          fi
+          cd "$(dirname "$PROJECT")"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamBoxLite-APK
+          path: extracted/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
